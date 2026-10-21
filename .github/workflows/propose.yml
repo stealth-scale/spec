@@ -1,0 +1,47 @@
+# Copyright Stealth Scale B.V. 2026
+# SPDX-License-Identifier: MIT
+
+# The reusable workflow that opens, updates and closes the sync pull requests of an implementation
+# repository. An implementation calls it on a schedule with secrets: inherit. The token of the GitHub
+# App of the variable ERGON_APP_CLIENT_ID and the secret ERGON_APP_PRIVATE_KEY writes the pull
+# requests, so their checks run without an approval.
+name: Propose
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The release of spec that the workflow installs, such as v0.1.0.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  propose:
+    name: Propose
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - name: Create the token of the App
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.ERGON_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ERGON_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Install spec
+        env:
+          VERSION: ${{ inputs.version }}
+        run: go install "go.stealthscale.io/spec/cmd/spec@${VERSION}"
+      - name: Propose
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: spec propose --repo "${REPO}"

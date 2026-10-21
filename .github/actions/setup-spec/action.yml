@@ -1,0 +1,27 @@
+# Copyright Stealth Scale B.V. 2026
+# SPDX-License-Identifier: MIT
+
+# Installs the program spec at a release, for the steps of a job that check the copies of an
+# implementation and verify the reports of its runners. The action builds spec with the go command
+# of the runner, which downloads the toolchain that spec requires. It adds only the directory of spec
+# to the PATH, so the job runs its tests with the Go that it set up.
+name: Set up spec
+description: Install the program spec at a release.
+
+inputs:
+  version:
+    description: The release of spec to install, such as v0.1.0.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install spec
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GOBIN: ${{ runner.temp }}/setup-spec/bin
+        GOTOOLCHAIN: auto
+      run: |
+        go install "go.stealthscale.io/spec/cmd/spec@${VERSION}"
+        echo "${GOBIN}" >> "${GITHUB_PATH}"
