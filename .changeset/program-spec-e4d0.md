@@ -1,4 +1,0 @@
----
----
-
-Add the program `spec`.
