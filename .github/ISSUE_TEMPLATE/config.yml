@@ -3,5 +3,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a vulnerability
-    url: https://github.com/stealthscale/spec/security/advisories/new
+    url: https://github.com/stealth-scale/spec/security/advisories/new
     about: Report a vulnerability privately, as SECURITY.md describes. Do not open a public issue for it.

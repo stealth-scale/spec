@@ -24,7 +24,7 @@
     {
       "path": ".github/ISSUE_TEMPLATE/config.yml",
       "producer": "github",
-      "sha256": "ef73b7a386a53e8caeeb92010e6302007619929607946a6691ceee5605d5297b"
+      "sha256": "b08315a74306b7b67300892db351598aa47523b2df67e99a90d1290aef8c6d68"
     },
     {
       "path": ".github/ISSUE_TEMPLATE/feature.yml",
@@ -302,7 +302,7 @@
     "name": "spec",
     "owner": "Stealth Scale B.V.",
     "license": "MIT",
-    "repository": "stealthscale/spec",
+    "repository": "stealth-scale/spec",
     "security-contact": "security@stealthscale.io",
     "languages": [
       "go"

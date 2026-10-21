@@ -125,7 +125,7 @@ A job of CI installs spec with the action `setup-spec` of this repository, check
 the tests with `SPEC_RESULTS`, and verifies the report:
 
 ```yaml
-- uses: stealthscale/spec/.github/actions/setup-spec@<commit> # <version>
+- uses: stealth-scale/spec/.github/actions/setup-spec@<commit> # <version>
   with:
     version: <version>
 - run: spec check --remote
@@ -167,7 +167,7 @@ permissions: {}
 
 jobs:
   propose:
-    uses: stealthscale/spec/.github/workflows/propose.yml@<commit> # <version>
+    uses: stealth-scale/spec/.github/workflows/propose.yml@<commit> # <version>
     with:
       version: <version>
     secrets: inherit
