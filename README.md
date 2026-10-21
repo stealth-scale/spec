@@ -17,6 +17,11 @@ checks that the runner of each language reports a result for every case.
 go install go.stealthscale.io/spec/cmd/spec@latest
 ```
 
+Each [release](https://github.com/stealth-scale/spec/releases) also has an archive of the binary
+for Linux, macOS and Windows on amd64 and arm64, with the completion scripts of bash, zsh and fish.
+It also has deb, rpm and apk packages for Linux. `checksums.txt` lists the SHA-256 of each asset,
+and cosign signs it with the identity of the release workflow.
+
 ## Configure a definition
 
 Declare the section `definition` in the file `.spec.yaml` of the definition repository:

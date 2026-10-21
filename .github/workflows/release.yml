@@ -6,6 +6,9 @@
 # passed on the content of the commit, such as the run of the version pull request. The jobs pack
 # and publish then release each package of the publish plan. The job pack sets up the toolchains of
 # the repository before ergon, which build the artifacts.
+#
+# The job pack also builds, signs and attests the assets of the releases, such as the binaries of
+# the commands of a Go module, and the job publish attaches them to each release before its publish.
 
 name: Release
 
@@ -78,6 +81,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # cosign signs the checksums of the assets, and actions/attest attests the assets, each with the
+      # OIDC identity of the workflow.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,6 +103,11 @@ jobs:
       - name: Pack the packages
         run: |
           ergon release pack --from-publish-plan publish-plan.json --out-dir dist
+      - name: Attest the assets
+        if: hashFiles('dist/assets/**') != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/assets/**/*
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release

@@ -290,7 +290,19 @@ go:
   # completions, true for a command whose command completion writes the scripts of bash, zsh and
   # fish, as in a program of cobra or of go.stealthscale.io/cli; packages, from deb, rpm and apk;
   # homebrew, true for a cask in homebrew.tap; license, the license of the repository when empty.
-  binaries: []
+  binaries:
+    - name: spec
+      module: .
+      main: ./cmd/spec
+      description: Vendors conformance definitions into implementations and keeps the copies in sync
+      license: ""
+      platforms: []
+      packages:
+        - deb
+        - rpm
+        - apk
+      completions: true
+      homebrew: false
   # The options of the casks of the commands under binaries whose homebrew is true.
   homebrew:
     # The repository of the Homebrew tap on GitHub, as owner/name, to which the job homebrew of
