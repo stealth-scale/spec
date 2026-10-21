@@ -1,0 +1,18 @@
+{
+    "digest": "sha256:7a5a550b2b8a607fa3673f8dbed0166d647fb342013be53e0c2d23f34f551433",
+    "files": {
+        "VERSION": "sha256:59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+        "corpus/a.json": "sha256:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "overlays/go.json": "sha256:4e6841799cb5043f1dd3bdfa51366117d6310ecdacbc013cd44b1c1cddadb01b",
+        "overlays/rust.json": "sha256:bce1ea5b6029fc4f5936d107fa20bf7304f7a3790555a359455db292545eb0ec"
+    },
+    "languages": {
+        "go": [
+            "overlays/go.json"
+        ],
+        "rust": [
+            "overlays/rust.json"
+        ]
+    },
+    "version": "1.0.0"
+}

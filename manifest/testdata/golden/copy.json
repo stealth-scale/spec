@@ -1,0 +1,16 @@
+{
+    "commit": "27b95377f6a3c1d2e4b5a6978c0d1e2f3a4b5c6d",
+    "digest": "sha256:3c0bc3efc5967f6c3cc2f628b456f74b91eaa8637c3f5521bf237d6525d4e6ca",
+    "files": {
+        "VERSION": "sha256:59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+        "corpus/a.json": "sha256:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "overlays/go.json": "sha256:4e6841799cb5043f1dd3bdfa51366117d6310ecdacbc013cd44b1c1cddadb01b"
+    },
+    "languages": {
+        "go": [
+            "overlays/go.json"
+        ]
+    },
+    "repo": "dokimasia/assert-spec",
+    "version": "1.0.0"
+}
