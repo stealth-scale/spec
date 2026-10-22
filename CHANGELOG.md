@@ -1,5 +1,11 @@
 # go.stealthscale.io/spec
 
+## 0.3.0
+
+### Minor Changes
+
+- 7863d0e: Let `spec sync`, `spec check --remote` and `spec status` read public repositories without a token.
+
 ## 0.2.0
 
 ### Minor Changes
