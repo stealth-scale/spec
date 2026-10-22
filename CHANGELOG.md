@@ -1,5 +1,11 @@
 # go.stealthscale.io/spec
 
+## 0.4.0
+
+### Minor Changes
+
+- 67e40f5: **Breaking:** Run `spec propose` in `propose.yml` with the token of the calling job instead of a GitHub App.
+
 ## 0.3.0
 
 ### Minor Changes
