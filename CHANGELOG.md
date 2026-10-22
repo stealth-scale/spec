@@ -1,5 +1,11 @@
 # go.stealthscale.io/spec
 
+## 0.2.0
+
+### Minor Changes
+
+- 1a079fb: Let a copy share its directory with the other files of the implementation.
+
 ## 0.1.0
 
 ### Minor Changes
