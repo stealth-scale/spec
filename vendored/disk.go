@@ -64,41 +64,50 @@ type Disk interface {
 var _ Disk = (*os.Root)(nil)
 
 // Write writes the copy c into the repository of disk, as [Overwrite] does, when the directory of
-// c does not exist or contains a copy whose files match its manifest. It leaves the directory as
-// it is otherwise, so a write never replaces an edit of a copy.
+// c has none of the entries of c, or contains a copy whose files match its manifest. It leaves the
+// directory as it is otherwise, so a write never replaces an edit of a copy. Write leaves the other
+// entries of the directory as they are.
 //
 // Error modes:
-//   - a [*NotIntactError], which wraps [ErrNotIntact], for a directory without a manifest that
-//     decodes, and for a copy whose files differ from its manifest, lack a file of it or add one.
-//   - the errors of Overwrite, and the error of disk for a directory or a file that cannot be read.
+//   - a [*NotIntactError], which wraps [ErrNotIntact], for an entry of c in a directory without a
+//     manifest that decodes, and for a copy whose files differ from its manifest, lack a file of it
+//     or add one.
+//   - the errors of Overwrite, and the error of disk for an entry or a file that cannot be read.
 func Write(disk Disk, c *Copy) error {
-	_, err := disk.Lstat(filepath.FromSlash(c.Dir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return Overwrite(disk, c)
+	present := false
+	for _, name := range Entries(c.Manifest) {
+		p := path.Join(c.Dir, name)
+		_, err := disk.Lstat(filepath.FromSlash(p))
+		switch {
+		case err == nil:
+			present = true
+		case !errors.Is(err, fs.ErrNotExist):
+			return fmt.Errorf("vendored: describe %s: %w", p, err)
+		}
 	}
-	if err != nil {
-		return fmt.Errorf("vendored: describe %s: %w", c.Dir, err)
-	}
-	_, problems, err := read(disk, c.Dir)
-	if err != nil {
-		return err
-	}
-	if len(problems) > 0 {
-		return &NotIntactError{Dir: c.Dir, Problems: problems}
+	if present {
+		_, problems, err := read(disk, c.Dir)
+		if err != nil {
+			return err
+		}
+		if len(problems) > 0 {
+			return &NotIntactError{Dir: c.Dir, Problems: problems}
+		}
 	}
 	return Overwrite(disk, c)
 }
 
-// Overwrite writes the copy c into the repository of disk, whatever its directory contains. It
-// writes the files of the directory of c into a directory beside it, replaces the directory with
-// that one, and then writes each file of c outside the directory. A file of the old copy that c
-// does not have therefore does not remain. Overwrite first removes the directories beside the copy
-// that a write which ended early left, and it changes no file of the repository that c does not
-// write.
+// Overwrite writes the copy c into the repository of disk, whatever the entries of its directory
+// contain. It writes the files of c below its directory into a directory beside it. It then
+// replaces each entry of c, and each entry of the copy that the directory contains, with the entry
+// of c, so an entry or a file of the old copy that c does not have does not remain. Overwrite first
+// removes the directories beside the copy that a write which ended early left. It changes no other
+// entry of the directory, and no file of the repository that c does not write.
 //
 // Error modes:
-//   - the error of disk for a call that fails, after which the directory of c contains the old copy
-//     or the new one.
+//   - the error of disk for a call that fails, after which each entry of the directory of c is the
+//     entry of the old copy or of the new one. A manifest of the old copy that is missing or does
+//     not decode is no error, and Overwrite then replaces the entries of c alone.
 func Overwrite(disk Disk, c *Copy) error {
 	parent, name := path.Split(c.Dir)
 	staging := parent + "." + name + stagingSuffix
@@ -107,6 +116,14 @@ func Overwrite(disk Disk, c *Copy) error {
 		if err := disk.RemoveAll(filepath.FromSlash(p)); err != nil {
 			return fmt.Errorf("vendored: remove %s: %w", p, err)
 		}
+	}
+	names := Entries(c.Manifest)
+	prev, err := lock(disk, c.Dir)
+	switch {
+	case err == nil:
+		names = Entries(c.Manifest, prev)
+	case !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotIntact):
+		return err
 	}
 	var outside []string
 	for _, p := range slices.Sorted(maps.Keys(c.Files)) {
@@ -119,15 +136,26 @@ func Overwrite(disk Disk, c *Copy) error {
 			return err
 		}
 	}
-	err := disk.Rename(filepath.FromSlash(c.Dir), filepath.FromSlash(old))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("vendored: move %s aside: %w", c.Dir, err)
+	for _, p := range []string{old, c.Dir} {
+		if err := disk.MkdirAll(filepath.FromSlash(p), dirMode); err != nil {
+			return fmt.Errorf("vendored: create %s: %w", p, err)
+		}
 	}
-	if err = disk.Rename(filepath.FromSlash(staging), filepath.FromSlash(c.Dir)); err != nil {
-		return fmt.Errorf("vendored: move the copy into %s: %w", c.Dir, err)
+	for _, entry := range names {
+		target := path.Join(c.Dir, entry)
+		err := disk.Rename(filepath.FromSlash(target), filepath.FromSlash(path.Join(old, entry)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("vendored: move %s aside: %w", target, err)
+		}
+		err = disk.Rename(filepath.FromSlash(path.Join(staging, entry)), filepath.FromSlash(target))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("vendored: move %s into place: %w", target, err)
+		}
 	}
-	if err = disk.RemoveAll(filepath.FromSlash(old)); err != nil {
-		return fmt.Errorf("vendored: remove %s: %w", old, err)
+	for _, p := range []string{old, staging} {
+		if err := disk.RemoveAll(filepath.FromSlash(p)); err != nil {
+			return fmt.Errorf("vendored: remove %s: %w", p, err)
+		}
 	}
 	for _, p := range outside {
 		if err := writeFile(disk, p, c.Files[p]); err != nil {
@@ -138,15 +166,16 @@ func Overwrite(disk Disk, c *Copy) error {
 }
 
 // Check checks the copy of the entry e in the repository of disk, and returns its manifest. The
-// copy is intact when its files match its manifest, the manifest names the definition of e and the
-// languages of e, and the file of each copy of e equals its file in the copy. Check accepts a copy
-// of every language for an entry of [spec.All], and a local copy.
+// copy is intact when the files of its entries match its manifest, the manifest names the
+// definition of e and the languages of e, and the file of each copy of e equals its file in the
+// copy. Check reads no other entry of the directory. It accepts a copy of every language for an
+// entry of [spec.All], and a local copy.
 //
 // Error modes:
 //   - a [*NotIntactError], which wraps [ErrNotIntact], with every problem of the copy: a directory
-//     without a manifest that decodes, a file that differs from the manifest, a file that the
-//     manifest does not list or that is missing, a link, another definition or other languages
-//     than e names, and the file of a copy that is missing or differs.
+//     without a manifest that decodes, a file that differs from the manifest, a file in an entry of
+//     the copy that the manifest does not list, a file that is missing, a link, another definition
+//     or other languages than e names, and the file of a copy that is missing or differs.
 //   - the error of disk for a directory or a file that cannot be read.
 func Check(disk Disk, e *implementation.Entry) (manifest.Manifest, error) {
 	m, problems, err := read(disk, e.Path)
@@ -185,14 +214,17 @@ func Check(disk Disk, e *implementation.Entry) (manifest.Manifest, error) {
 	return m, nil
 }
 
-// Stash moves the copy of the entry e in the repository of disk aside, into the directory beside
-// it that [Unstash] moves back. Stash keeps a copy that it moved aside earlier, and then leaves the
-// directory of e as it is. [Overwrite] leaves the directory aside as it is, so a caller
-// can write other copies of e and then restore the copy that Stash moved aside.
+// Stash moves the entries of the copy of the entry e in the repository of disk aside, into the
+// directory beside the directory of the copy that [Unstash] moves back. It moves the entries that
+// the manifest of the copy owns, and leaves the other entries of the directory as they are. Stash
+// keeps a copy that it moved aside earlier, and then leaves the directory of e as it is.
+// [Overwrite] leaves the directory aside as it is, so a caller can write other copies of e and then
+// restore the copy that Stash moved aside.
 //
 // Error modes:
 //   - the error of disk for a call that fails, such as an error that wraps fs.ErrNotExist for an
-//     entry without a copy.
+//     entry without a copy, or for an entry of the copy that is missing.
+//   - a [*NotIntactError], which wraps [ErrNotIntact], for a copy whose manifest does not decode.
 func Stash(disk Disk, e *implementation.Entry) error {
 	parent, name := path.Split(e.Path)
 	stash := parent + "." + name + stashSuffix
@@ -203,19 +235,34 @@ func Stash(disk Disk, e *implementation.Entry) error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("vendored: describe %s: %w", stash, err)
 	}
-	if err := disk.Rename(filepath.FromSlash(e.Path), filepath.FromSlash(stash)); err != nil {
-		return fmt.Errorf("vendored: move %s aside: %w", e.Path, err)
+	m, err := lock(disk, e.Path)
+	if err != nil {
+		return err
+	}
+	if err := disk.MkdirAll(filepath.FromSlash(stash), dirMode); err != nil {
+		return fmt.Errorf("vendored: create %s: %w", stash, err)
+	}
+	for _, entry := range Entries(m) {
+		from := path.Join(e.Path, entry)
+		if err := disk.Rename(filepath.FromSlash(from), filepath.FromSlash(path.Join(stash, entry))); err != nil {
+			return fmt.Errorf("vendored: move %s aside: %w", from, err)
+		}
 	}
 	return nil
 }
 
-// Unstash replaces the copy of the entry e in the repository of disk with the copy that [Stash]
-// moved aside. It then writes the file of each copy of e from the restored copy. It reports false,
-// and changes nothing, when no copy of e is aside.
+// Unstash replaces the entries of the copy of the entry e in the repository of disk with the copy
+// that [Stash] moved aside, and leaves the other entries of the directory as they are. It removes
+// each entry of the copy aside and of the copy in the directory, and then moves the entries of the
+// copy aside back. It then writes the file of each copy of e from the restored copy. It reports
+// false, and changes nothing, when no copy of e is aside.
 //
 // Error modes:
 //   - the error of disk for a call that fails, such as the read of a file of a copy of e that the
-//     restored copy lacks.
+//     restored copy lacks. A manifest of the copy in the directory that is missing or does not
+//     decode is no error, and Unstash then removes the entries of the copy aside alone.
+//   - a [*NotIntactError], which wraps [ErrNotIntact], for a copy aside whose manifest does not
+//     decode.
 func Unstash(disk Disk, e *implementation.Entry) (bool, error) {
 	parent, name := path.Split(e.Path)
 	stash := parent + "." + name + stashSuffix
@@ -226,11 +273,33 @@ func Unstash(disk Disk, e *implementation.Entry) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("vendored: describe %s: %w", stash, err)
 	}
-	if err := disk.RemoveAll(filepath.FromSlash(e.Path)); err != nil {
-		return false, fmt.Errorf("vendored: remove %s: %w", e.Path, err)
+	aside, err := lock(disk, stash)
+	if err != nil {
+		return false, err
 	}
-	if err := disk.Rename(filepath.FromSlash(stash), filepath.FromSlash(e.Path)); err != nil {
-		return false, fmt.Errorf("vendored: move the copy back into %s: %w", e.Path, err)
+	restored := Entries(aside)
+	names := restored
+	current, err := lock(disk, e.Path)
+	switch {
+	case err == nil:
+		names = Entries(aside, current)
+	case !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotIntact):
+		return false, err
+	}
+	for _, entry := range names {
+		p := path.Join(e.Path, entry)
+		if err := disk.RemoveAll(filepath.FromSlash(p)); err != nil {
+			return false, fmt.Errorf("vendored: remove %s: %w", p, err)
+		}
+	}
+	for _, entry := range restored {
+		to := path.Join(e.Path, entry)
+		if err := disk.Rename(filepath.FromSlash(path.Join(stash, entry)), filepath.FromSlash(to)); err != nil {
+			return false, fmt.Errorf("vendored: move %s back: %w", to, err)
+		}
+	}
+	if err := disk.RemoveAll(filepath.FromSlash(stash)); err != nil {
+		return false, fmt.Errorf("vendored: remove %s: %w", stash, err)
 	}
 	for _, c := range e.Copies {
 		content, err := disk.ReadFile(filepath.FromSlash(path.Join(e.Path, c.From)))
@@ -244,14 +313,33 @@ func Unstash(disk Disk, e *implementation.Entry) (bool, error) {
 	return true, nil
 }
 
+// lock returns the manifest of the copy at the slash-separated dir of disk.
+//
+// Error modes:
+//   - the error of disk for a manifest that cannot be read, which wraps fs.ErrNotExist for a
+//     directory without a manifest.
+//   - a [*NotIntactError], which wraps [ErrNotIntact], for a manifest that does not decode.
+func lock(disk Disk, dir string) (manifest.Manifest, error) {
+	p := path.Join(dir, ManifestFile)
+	data, err := disk.ReadFile(filepath.FromSlash(p))
+	if err != nil {
+		return manifest.Manifest{}, fmt.Errorf("vendored: read %s: %w", p, err)
+	}
+	m, err := manifest.Decode(data)
+	if err != nil {
+		return manifest.Manifest{}, &NotIntactError{Dir: dir, Problems: []string{err.Error()}}
+	}
+	return m, nil
+}
+
 // read reads the copy at the slash-separated dir of disk, and returns its manifest and the problems
-// of its files in the order of their paths: each regular file that the manifest does not list or
-// whose digest differs, each entry that is neither a regular file nor a directory, and then each
-// listed file that is missing. It returns a [*NotIntactError] for a directory without a manifest
-// and for a manifest that does not decode, and the error of disk for a directory or a file that
-// cannot be read.
+// of the files of its entries in the order of their paths: each regular file that the manifest does
+// not list or whose digest differs, each entry that is neither a regular file nor a directory, and
+// then each listed file that is missing. It reads no other entry of the directory. It returns a
+// [*NotIntactError] for a directory without a manifest and for a manifest that does not decode, and
+// the error of disk for a directory or a file that cannot be read.
 func read(disk Disk, dir string) (manifest.Manifest, []string, error) {
-	data, err := disk.ReadFile(filepath.FromSlash(path.Join(dir, ManifestFile)))
+	m, err := lock(disk, dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return manifest.Manifest{}, nil, &NotIntactError{
@@ -259,19 +347,26 @@ func read(disk Disk, dir string) (manifest.Manifest, []string, error) {
 			Problems: []string{"the copy has no " + ManifestFile},
 		}
 	case err != nil:
-		return manifest.Manifest{}, nil, fmt.Errorf("vendored: read the manifest of %s: %w", dir, err)
+		return manifest.Manifest{}, nil, err
 	}
-	m, err := manifest.Decode(data)
-	if err != nil {
-		return manifest.Manifest{}, nil, &NotIntactError{Dir: dir, Problems: []string{err.Error()}}
-	}
+	names := Entries(m)
 	var problems []string
 	seen := make(map[string]bool, len(m.Files))
 	err = fs.WalkDir(disk.FS(), dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		if p == dir {
+			return nil
+		}
 		rel := strings.TrimPrefix(p, dir+"/")
+		first, _, _ := strings.Cut(rel, "/")
+		if _, owned := slices.BinarySearch(names, first); !owned {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		switch {
 		case d.IsDir() || rel == ManifestFile:
 			return nil

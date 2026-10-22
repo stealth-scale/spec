@@ -6,6 +6,8 @@ package vendored
 import (
 	"fmt"
 	"path"
+	"slices"
+	"strings"
 
 	"go.stealthscale.io/spec/definition"
 	"go.stealthscale.io/spec/implementation"
@@ -75,4 +77,21 @@ func Build(tree *definition.Tree, e *implementation.Entry, commit string) (*Copy
 		files[c.To] = tree.Files[c.From]
 	}
 	return &Copy{Files: files, Manifest: view, Dir: e.Path}, nil
+}
+
+// Entries returns the names of the entries that the copies with the manifests ms own in the
+// directory of a copy: [ManifestFile], and the first element of the path of each file of each
+// manifest. It returns each name once, in order. A copy of the files VERSION, corpus/a.json and
+// spec/zones.json owns the entries VERSION, corpus, manifest.json and spec. Every other entry of the
+// directory belongs to the repository.
+func Entries(ms ...manifest.Manifest) []string {
+	names := []string{ManifestFile}
+	for _, m := range ms {
+		for p := range m.Files {
+			first, _, _ := strings.Cut(p, "/")
+			names = append(names, first)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }

@@ -78,11 +78,41 @@ func TestDisk(t *testing.T) {
 			assert.ErrorIs(t, err, vendored.ErrNotIntact, "Write refuses an edited copy")
 		})
 
-		t.Run("returns ErrNotIntact for a directory without a manifest", func(t *testing.T) {
+		t.Run("returns ErrNotIntact for an entry of the copy without a manifest", func(t *testing.T) {
 			t.Parallel()
-			repoDir := files.Workspace(t, files.Tree{dir + "/a.json": files.Text("{}\n")})
+			repoDir := files.Workspace(t, files.Tree{dir + "/corpus/a.json": files.Text("{}\n")})
 			err := vendored.Write(openRoot(t, repoDir), build(t, first, &entry, commit))
-			assert.ErrorIs(t, err, vendored.ErrNotIntact, "Write refuses a directory that is no copy")
+			assert.ErrorIs(t, err, vendored.ErrNotIntact, "Write refuses an entry that is no copy")
+		})
+
+		t.Run("writes a new copy into a directory with other files", func(t *testing.T) {
+			t.Parallel()
+			repoDir := files.Workspace(t, files.Tree{other: files.Text(otherText)})
+			c := build(t, first, &entry, commit)
+			assert.NoError(t, vendored.Write(openRoot(t, repoDir), c), "Write writes a copy beside other files")
+			want := treeOf(c)
+			want["definition.go"] = files.Text(otherText)
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				want,
+				"the directory contains the copy and the other file",
+			)
+		})
+
+		t.Run("leaves the other files of the directory of the copy as they are", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{
+				other:                    files.Text(otherText),
+				dir + "/testdata/x.json": files.Text("{}\n"),
+			})
+			c := build(t, second, &entry, commit)
+			assert.NoError(t, vendored.Write(root, c), "Write replaces the copy beside other files")
+			want := treeOf(c)
+			want["definition.go"] = files.Text(otherText)
+			want["testdata/x.json"] = files.Text("{}\n")
+			files.Equal(t, os.DirFS(filepath.Join(repoDir, copyPath)), want, "the other files remain")
 		})
 
 		t.Run("returns ErrNotIntact for a directory whose manifest does not decode", func(t *testing.T) {
@@ -128,8 +158,8 @@ func TestDisk(t *testing.T) {
 		t.Run("leaves no directory beside the copy", func(t *testing.T) {
 			t.Parallel()
 			repoDir := files.Workspace(t, files.Tree{
-				"conformance/.spec.spec-new/a": files.Text("left by a write that ended early\n"),
-				"conformance/.spec.spec-old/b": files.Text("left by a write that ended early\n"),
+				"conformance/.spec.spec-new/corpus/z.json": files.Text("left by a write that ended early\n"),
+				"conformance/.spec.spec-old/corpus/z.json": files.Text("left by a write that ended early\n"),
 			})
 			c := build(t, first, &entry, commit)
 			assert.NoError(t, vendored.Write(openRoot(t, repoDir), c), "Write writes the copy")
@@ -181,7 +211,7 @@ func TestDisk(t *testing.T) {
 			revisions := []*vendored.Copy{build(t, first, &entry, commit), build(t, second, &entry, commit)}
 			prop.ForAll(t, "a copy is intact after a write and not after an edit", func(c *prop.Case) {
 				name := strconv.FormatInt(cases.Add(1), 10)
-				files.Write(c, base, files.Tree{name: files.Dir()})
+				files.Write(c, base, files.Tree{name + "/" + other: files.Text(otherText)})
 				repoDir := filepath.Join(base, name)
 				root := openRoot(c, repoDir)
 				var current *vendored.Copy
@@ -245,6 +275,12 @@ func TestDisk(t *testing.T) {
 							"no staging directory remains",
 						)
 						files.Absent(c, filepath.Join(repoDir, "conformance", ".spec.spec-old"), "no old copy remains")
+						files.HasContent(
+							c,
+							filepath.Join(repoDir, filepath.FromSlash(other)),
+							otherText,
+							"the other file of the directory remains",
+						)
 					},
 				})
 			})
@@ -270,17 +306,69 @@ func TestDisk(t *testing.T) {
 			)
 		})
 
-		t.Run("replaces a directory without a manifest", func(t *testing.T) {
+		t.Run("replaces an entry of the copy without a manifest", func(t *testing.T) {
 			t.Parallel()
-			repoDir := files.Workspace(t, files.Tree{dir + "/a.json": files.Text("{}\n")})
+			repoDir := files.Workspace(t, files.Tree{dir + "/corpus/z.json": files.Text("{}\n")})
 			c := build(t, first, &entry, commit)
-			assert.NoError(t, vendored.Overwrite(openRoot(t, repoDir), c), "Overwrite replaces the directory")
+			assert.NoError(t, vendored.Overwrite(openRoot(t, repoDir), c), "Overwrite replaces the entry")
 			files.Equal(
 				t,
 				os.DirFS(filepath.Join(repoDir, copyPath)),
 				treeOf(c),
 				"the directory contains the copy alone",
 			)
+		})
+
+		t.Run("replaces a copy whose manifest does not decode", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{dir + "/" + vendored.ManifestFile: files.Text("{}\n")})
+			c := build(t, second, &entry, commit)
+			assert.NoError(t, vendored.Overwrite(root, c), "Overwrite replaces the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				treeOf(c),
+				"the directory contains the second copy alone",
+			)
+		})
+
+		t.Run("removes an entry of the old copy that the new copy lacks", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			c := build(t, third, &entry, commit)
+			assert.NoError(t, vendored.Overwrite(root, c), "Overwrite replaces the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				treeOf(c),
+				"the directory has no overlays",
+			)
+		})
+
+		t.Run("leaves the other files of the directory of the copy as they are", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{other: files.Text(otherText)})
+			c := build(t, third, &entry, commit)
+			assert.NoError(t, vendored.Overwrite(root, c), "Overwrite replaces the copy beside another file")
+			want := treeOf(c)
+			want["definition.go"] = files.Text(otherText)
+			files.Equal(t, os.DirFS(filepath.Join(repoDir, copyPath)), want, "the other file remains")
+		})
+
+		t.Run("returns fs.ErrPermission for a manifest that cannot be read", func(t *testing.T) {
+			t.Parallel()
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows stores no permission bit that forbids the read of a file")
+			}
+			c := build(t, first, &entry, commit)
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{
+				dir + "/" + vendored.ManifestFile: files.Bytes(c.Files[dir+"/"+vendored.ManifestFile]).WithMode(0o000),
+			})
+			err := vendored.Overwrite(root, build(t, second, &entry, commit))
+			assert.ErrorIs(t, err, fs.ErrPermission, "Overwrite returns the error of the read")
 		})
 
 		t.Run("returns the error of a call of the disk that fails", func(t *testing.T) {
@@ -305,13 +393,45 @@ func TestDisk(t *testing.T) {
 			t.Parallel()
 			root, repoDir := writtenAt(t, first)
 			assert.NoError(t, vendored.Stash(root, &entry), "Stash moves the copy")
-			files.Absent(t, filepath.Join(repoDir, copyPath), "the directory of the copy is empty")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				files.Tree{},
+				"the directory of the copy is empty",
+			)
 			files.Equal(
 				t,
 				os.DirFS(filepath.Join(repoDir, "conformance", ".spec.spec-try")),
 				treeOf(build(t, first, &entry, commit)),
 				"the copy is beside its directory",
 			)
+		})
+
+		t.Run("leaves the other files of the directory of the copy as they are", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{other: files.Text(otherText)})
+			assert.NoError(t, vendored.Stash(root, &entry), "Stash moves the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				files.Tree{"definition.go": files.Text(otherText)},
+				"the other file remains",
+			)
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, "conformance", ".spec.spec-try")),
+				treeOf(build(t, first, &entry, commit)),
+				"the copy alone is beside its directory",
+			)
+		})
+
+		t.Run("returns ErrNotIntact for a copy whose manifest does not decode", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{dir + "/" + vendored.ManifestFile: files.Text("{}\n")})
+			err := vendored.Stash(root, &entry)
+			assert.ErrorIs(t, err, vendored.ErrNotIntact, "Stash finds no entries of the copy")
 		})
 
 		t.Run("keeps the copy that it moved aside earlier", func(t *testing.T) {
@@ -381,6 +501,88 @@ func TestDisk(t *testing.T) {
 			)
 		})
 
+		t.Run("leaves the other files of the directory of the copy as they are", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := stashedAt(t)
+			files.Write(t, repoDir, files.Tree{other: files.Text(otherText)})
+			_, err := vendored.Unstash(root, &entry)
+			assert.NoError(t, err, "Unstash restores the copy")
+			want := treeOf(build(t, first, &entry, commit))
+			want["definition.go"] = files.Text(otherText)
+			files.Equal(t, os.DirFS(filepath.Join(repoDir, copyPath)), want, "the other file remains")
+		})
+
+		t.Run("removes an entry of the copy of the trial that the restored copy lacks", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, third)
+			assert.NoError(t, vendored.Stash(root, &entry), "Stash moves the copy aside")
+			assert.NoError(t, vendored.Overwrite(root, build(t, first, &entry, commit)), "Overwrite writes the trial")
+			_, err := vendored.Unstash(root, &entry)
+			assert.NoError(t, err, "Unstash restores the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				treeOf(build(t, third, &entry, commit)),
+				"the directory has no overlays",
+			)
+		})
+
+		t.Run("restores the copy over a directory without a manifest", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := stashedAt(t)
+			assert.NoError(
+				t,
+				os.Remove(filepath.Join(repoDir, copyPath, vendored.ManifestFile)),
+				"the case removes the manifest of the copy of the trial",
+			)
+			_, err := vendored.Unstash(root, &entry)
+			assert.NoError(t, err, "Unstash restores the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				treeOf(build(t, first, &entry, commit)),
+				"the first copy is back in its directory",
+			)
+		})
+
+		t.Run("restores the copy over a copy whose manifest does not decode", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := stashedAt(t)
+			files.Write(t, repoDir, files.Tree{dir + "/" + vendored.ManifestFile: files.Text("{}\n")})
+			_, err := vendored.Unstash(root, &entry)
+			assert.NoError(t, err, "Unstash restores the copy")
+			files.Equal(
+				t,
+				os.DirFS(filepath.Join(repoDir, copyPath)),
+				treeOf(build(t, first, &entry, commit)),
+				"the first copy is back in its directory",
+			)
+		})
+
+		t.Run("returns ErrNotIntact for a copy aside whose manifest does not decode", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := stashedAt(t)
+			files.Write(t, repoDir, files.Tree{
+				"conformance/.spec.spec-try/" + vendored.ManifestFile: files.Text("{}\n"),
+			})
+			_, err := vendored.Unstash(root, &entry)
+			assert.ErrorIs(t, err, vendored.ErrNotIntact, "Unstash finds no entries of the copy aside")
+		})
+
+		t.Run("returns fs.ErrPermission for a manifest of the copy that cannot be read", func(t *testing.T) {
+			t.Parallel()
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows stores no permission bit that forbids the read of a file")
+			}
+			c := build(t, second, &entry, commit)
+			root, repoDir := stashedAt(t)
+			files.Write(t, repoDir, files.Tree{
+				dir + "/" + vendored.ManifestFile: files.Bytes(c.Files[dir+"/"+vendored.ManifestFile]).WithMode(0o000),
+			})
+			_, err := vendored.Unstash(root, &entry)
+			assert.ErrorIs(t, err, fs.ErrPermission, "Unstash returns the error of the read")
+		})
+
 		t.Run("reports false without a copy aside", func(t *testing.T) {
 			t.Parallel()
 			root, repoDir := writtenAt(t, first)
@@ -443,6 +645,29 @@ func TestDisk(t *testing.T) {
 			m, err := vendored.Check(root, &e)
 			assert.NoError(t, err, "Check accepts a copy of every language")
 			assert.Equal(t, m, c.Manifest, "Check returns the manifest of the copy")
+		})
+
+		t.Run("returns the manifest of a copy beside other files", func(t *testing.T) {
+			t.Parallel()
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{
+				other:                    files.Text(otherText),
+				dir + "/testdata/x.json": files.Text("{}\n"),
+			})
+			m, err := vendored.Check(root, &entry)
+			assert.NoError(t, err, "Check reads the entries of the copy alone")
+			assert.Equal(t, m, build(t, first, &entry, commit).Manifest, "Check returns the manifest of the copy")
+		})
+
+		t.Run("returns the manifest of a copy beside a directory that cannot be read", func(t *testing.T) {
+			t.Parallel()
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows stores no permission bit that forbids the read of a directory")
+			}
+			root, repoDir := writtenAt(t, first)
+			files.Write(t, repoDir, files.Tree{dir + "/testdata": files.Dir().WithMode(0o000)})
+			_, err := vendored.Check(root, &entry)
+			assert.NoError(t, err, "Check reads no directory outside the entries of the copy")
 		})
 
 		t.Run("returns ErrNotIntact for a missing copy", func(t *testing.T) {

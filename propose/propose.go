@@ -200,7 +200,9 @@ type Result struct {
 //
 // The pull request of a definition comes from the branch [BranchPrefix] and the repository of the
 // definition, such as spec-sync/dokimasia/assert-spec. Its commits write each file of the copy
-// whose blob differs, and remove each file below the directory of the copy that the copy lacks. A
+// whose blob differs, and remove each file that the copy lacks in an entry of the copy or of the
+// copy on the default branch, as vendored.Entries names the entries. The other files of the
+// directory of the copy belong to the repository, and the pull request leaves them as they are. A
 // repository with the configuration of changesets also gets an empty changeset. The body states the
 // version and the commit of the copy before and after, the commits of the definition between the
 // two, and the files that change. Propose cuts a body above 60,000 bytes at a line.
@@ -270,9 +272,23 @@ func (r *repository) propose(ctx context.Context, e *implementation.Entry) (Prop
 			files[file] = content
 		}
 	}
+	data, _, err := r.gh.File(ctx, r.name, r.head, path.Join(c.Dir, vendored.ManifestFile))
+	if err != nil {
+		return Proposal{}, fmt.Errorf("propose: read the manifest of %s: %w", c.Dir, err)
+	}
+	// A manifest that the base branch lacks is empty data, which Decode refuses as well.
+	var prev *manifest.Manifest
+	entries := vendored.Entries(c.Manifest)
+	old, err := manifest.Decode(data)
+	if err == nil {
+		prev, entries = &old, vendored.Entries(c.Manifest, old)
+	}
 	var deleted []string
 	for file := range r.blobs {
-		if _, kept := c.Files[file]; !kept && strings.HasPrefix(file, c.Dir+"/") {
+		rel, below := strings.CutPrefix(file, c.Dir+"/")
+		first, _, _ := strings.Cut(rel, "/")
+		_, owned := slices.BinarySearch(entries, first)
+		if _, kept := c.Files[file]; !kept && below && owned {
 			deleted = append(deleted, file)
 		}
 	}
@@ -287,7 +303,7 @@ func (r *repository) propose(ctx context.Context, e *implementation.Entry) (Prop
 	if target.Tag != "" {
 		source = fmt.Sprintf(releaseFormat, target.Tag)
 	}
-	body, err := r.body(ctx, c, source, files, deleted)
+	body, err := r.body(ctx, c, prev, source, files, deleted)
 	if err != nil {
 		return Proposal{}, err
 	}
@@ -335,39 +351,35 @@ func (r *repository) closeCurrent(ctx context.Context, proposal Proposal, branch
 }
 
 // body returns the body of the pull request that syncs the copy at c.Dir to c from source, the
-// commit of the definition in words. The pull request writes files and removes deleted, which is
-// sorted. body reads the manifest of the copy on the base branch, and lists the commits of the
-// definition since the commit of that manifest when the manifest comes from the same definition.
+// commit of the definition in words. prev is the manifest of the copy on the base branch, and nil
+// for a copy without a manifest that decodes. The pull request writes files and removes deleted,
+// which is sorted. body lists the commits of the definition since the commit of prev when prev
+// comes from the same definition.
 //
 // Error modes:
 //   - the error of r.gh for a call that fails.
 func (r *repository) body(
-	ctx context.Context, c *vendored.Copy, source string, files map[string][]byte, deleted []string,
+	ctx context.Context, c *vendored.Copy, prev *manifest.Manifest, source string, files map[string][]byte,
+	deleted []string,
 ) (string, error) {
 	def := string(c.Manifest.Repo)
-	data, _, err := r.gh.File(ctx, r.name, r.head, path.Join(c.Dir, vendored.ManifestFile))
-	if err != nil {
-		return "", fmt.Errorf("propose: read the manifest of %s: %w", c.Dir, err)
-	}
 	lines := []string{fmt.Sprintf(introFormat, def, code(c.Dir), source), ""}
-	// A manifest that the base branch lacks is empty data, which Decode refuses as well.
-	old, err := manifest.Decode(data)
 	switch {
-	case err != nil:
+	case prev == nil:
 		lines = append(lines, unknownSource)
-	case old.Local:
-		lines = append(lines, fmt.Sprintf(localFormat, old.Version))
+	case prev.Local:
+		lines = append(lines, fmt.Sprintf(localFormat, prev.Version))
 	default:
-		lines = append(lines, fmt.Sprintf(fromFormat, old.Version, old.Repo, old.Commit))
+		lines = append(lines, fmt.Sprintf(fromFormat, prev.Version, prev.Repo, prev.Commit))
 	}
 	lines = append(lines, fmt.Sprintf(toFormat, c.Manifest.Version, def, c.Manifest.Commit))
 	var commits []string
-	if old.Repo == c.Manifest.Repo && old.Commit != "" {
+	if prev != nil && prev.Repo == c.Manifest.Repo && prev.Commit != "" {
 		// The comparison with a commit that the definition lacks, such as a commit that a force push
 		// removed, has no commits.
-		comparison, _, err := r.gh.Compare(ctx, def, old.Commit, c.Manifest.Commit)
+		comparison, _, err := r.gh.Compare(ctx, def, prev.Commit, c.Manifest.Commit)
 		if err != nil {
-			return "", fmt.Errorf("propose: compare %s with %s: %w", old.Commit, c.Manifest.Commit, err)
+			return "", fmt.Errorf("propose: compare %s with %s: %w", prev.Commit, c.Manifest.Commit, err)
 		}
 		for _, k := range comparison.Commits {
 			commits = append(commits, fmt.Sprintf(commitFormat, def, k.SHA, code(k.Subject)))

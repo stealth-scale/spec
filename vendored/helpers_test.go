@@ -16,13 +16,18 @@ import (
 	"go.stealthscale.io/spec/vendored"
 )
 
-// The values of the copies that the cases build.
+// The values of the copies that the cases build. other is a file of the repository in the
+// directory of the copy, outside the entries of the copy.
 const (
 	repo   = spec.Repo("dokimasia/assert-spec")
 	commit = "27b95377f6a3c1d2e4b5a6978c0d1e2f3a4b5c6d"
 	dir    = "conformance/spec"
 	zones  = "internal/zone/zones.json"
+	other  = dir + "/definition.go"
 )
+
+// otherText is the content of the file other.
+const otherText = "package spec\n"
 
 // config configures the definitions of the cases.
 const config = `definition:
@@ -53,6 +58,22 @@ var second = map[string]string{
 	"corpus/c.json":      `{"case": "c"}` + "\n",
 	"overlays/go.json":   `{"language": "go"}` + "\n",
 	"overlays/rust.json": `{"language": "rust"}` + "\n",
+}
+
+// thirdConfig configures a definition without overlays.
+const thirdConfig = `definition:
+  repo: dokimasia/assert-spec
+  languages: [go, rust]
+  files: [VERSION, "spec/*.json", "corpus/*.json"]
+`
+
+// third is a revision of the definition without overlays, so its copy for entry lacks the entry
+// overlays of the copies of first and second.
+var third = map[string]string{
+	spec.ConfigFile:   thirdConfig,
+	"VERSION":         "1.2.0\n",
+	"spec/zones.json": `{"zones": 3}` + "\n",
+	"corpus/a.json":   `{"case": "a", "version": 3}` + "\n",
 }
 
 // entry is the entry of the cases: the go files of the definition at dir, and the zone table at

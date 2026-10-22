@@ -38,6 +38,7 @@ const (
 	mainCommit     = "3333333333333333333333333333333333333333"
 	otherCommit    = "4444444444444444444444444444444444444444"
 	largeCommit    = "5555555555555555555555555555555555555555"
+	thirdCommit    = "6666666666666666666666666666666666666666"
 )
 
 // versionBlob is the blob of git of the version file of first, as git hash-object computes it.
@@ -92,6 +93,18 @@ var second = map[string]string{
 	"corpus/c.json":      `{"case": "c"}` + "\n",
 	"overlays/go.json":   `{"language": "go"}` + "\n",
 	"overlays/rust.json": `{"language": "rust"}` + "\n",
+}
+
+// third is a revision of the definition without overlays, so its copy lacks the entry overlays.
+var third = map[string]string{
+	spec.ConfigFile: `definition:
+  repo: dokimasia/assert-spec
+  languages: [go, rust]
+  files: [VERSION, "spec/*.json", "corpus/*.json"]
+`,
+	"VERSION":         "1.2.0\n",
+	"spec/zones.json": `{"zones": 3}` + "\n",
+	"corpus/a.json":   `{"case": "a", "version": 3}` + "\n",
 }
 
 // releaseConfig and developConfig configure the implementation of the cases to follow the newest
@@ -510,8 +523,8 @@ func TestPropose(t *testing.T) {
 			impl := implementationAt(t, implConfig, first, firstCommit)
 			want, items := make([]string, 0, count), make([]string, 0, count)
 			for i := range count {
-				file := fmt.Sprintf("conformance/spec/notes/%02d.md", i)
-				impl[file] = "notes\n"
+				file := fmt.Sprintf("conformance/spec/corpus/x%02d.json", i)
+				impl[file] = "{}\n"
 				want = append(want, file)
 				items = append(items, "- `"+file+"`")
 			}
@@ -525,6 +538,39 @@ func TestPropose(t *testing.T) {
 				f.bodies[p.Pull],
 				"## Removed files\n\n"+strings.Join(items, "\n")+"\n",
 				"the body lists the files in the order of their paths",
+			)
+		})
+
+		t.Run("leaves the other files of the directory of the copy as they are", func(t *testing.T) {
+			t.Parallel()
+			impl := implementationAt(t, implConfig, first, firstCommit)
+			impl["conformance/spec/definition.go"] = "package spec\n"
+			impl["conformance/spec/testdata/x.json"] = "{}\n"
+			impl["VERSION"] = "0.1.0\n"
+			f := newFake(impl)
+			f.branches[definitionRepo]["main"] = secondCommit
+			proposeOne(t, f)
+			assert.Length(t, f.proposals, 1, "the proposal is one commit")
+			assert.Equal(
+				t,
+				f.proposals[0].deleted,
+				[]string{"conformance/spec/corpus/b.json"},
+				"the dropped case alone",
+			)
+		})
+
+		t.Run("proposes the removal of an entry of the old copy that the new copy lacks", func(t *testing.T) {
+			t.Parallel()
+			f := newFake(implementationAt(t, implConfig, first, firstCommit))
+			f.commits[definitionRepo][thirdCommit] = third
+			f.branches[definitionRepo]["main"] = thirdCommit
+			proposeOne(t, f)
+			assert.Length(t, f.proposals, 1, "the proposal is one commit")
+			assert.Equal(
+				t,
+				f.proposals[0].deleted,
+				[]string{"conformance/spec/corpus/b.json", "conformance/spec/overlays/go.json"},
+				"the dropped case and the overlay",
 			)
 		})
 

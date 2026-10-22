@@ -97,6 +97,10 @@ the definition, and the file `manifest.json`. That manifest is the lock of the c
 repository and the commit of the copy, and the digest of each file. A change of a file of another
 language leaves the copy as it is.
 
+The directory of a copy can contain other files, such as the source files of the package that
+reads the copy. The copy owns the entries of the directory that its files start with, such as
+`corpus` and `overlays`, and `manifest.json`. spec writes, checks and moves those entries alone.
+
 `spec sync` refuses to replace a copy whose files differ from its manifest, so it never overwrites
 an edit. To replace such a copy, pass `--force`. The flags `--locked`, `--commit SHA` and
 `--from DIR` select another source:
@@ -151,8 +155,8 @@ the `PATH`, so the toolchain of the tests of the job does not change.
 track through the GitHub API, without a checkout:
 
 - A copy that differs gets a pull request from the branch `spec-sync/` and the repository of the
-  definition. Its commits write the files that differ and remove the files that the copy lacks. A
-  repository with `.changeset/config.json` also gets an empty changeset.
+  definition. Its commits write the files that differ, and remove the files in the entries of the
+  copy that the copy lacks. A repository with `.changeset/config.json` also gets an empty changeset.
 - A copy that matches gets its open pull request closed with a comment.
 
 The body of the pull request states the version and the commit of the copy before and after, the

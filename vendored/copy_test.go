@@ -129,6 +129,37 @@ func TestCopy(t *testing.T) {
 			assert.ErrorIs(t, err, definition.ErrConfig, "Build returns the error of the manifest")
 		})
 	})
+
+	t.Run("Entries", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the first element of the path of each file and the manifest in order", func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(
+				t,
+				vendored.Entries(build(t, first, &entry, commit).Manifest),
+				[]string{"VERSION", "corpus", vendored.ManifestFile, "overlays", "spec"},
+				"the copy owns the entries that its files start with",
+			)
+		})
+
+		t.Run("returns each entry of two manifests once", func(t *testing.T) {
+			t.Parallel()
+			old := manifest.Manifest{Files: map[string]string{"VERSION": "", "corpus/a.json": ""}}
+			current := manifest.Manifest{Files: map[string]string{"corpus/b.json": "", "overlays/go.json": ""}}
+			assert.Equal(
+				t,
+				vendored.Entries(old, current),
+				[]string{"VERSION", "corpus", vendored.ManifestFile, "overlays"},
+				"the entries of both copies",
+			)
+		})
+
+		t.Run("returns the manifest alone without a manifest", func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, vendored.Entries(), []string{vendored.ManifestFile}, "every copy owns its manifest")
+		})
+	})
 }
 
 // view returns the manifest of the go files of the definition contents.
