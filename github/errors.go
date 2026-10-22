@@ -25,4 +25,8 @@ var (
 	// ErrNoRelease is the error of [Client.LatestRelease] for a repository without a stable
 	// release, and for a release whose tag the repository lacks. It classifies as [errs.NotFound].
 	ErrNoRelease = errs.WithClass(errors.New("github: no stable release"), errs.NotFound)
+
+	// ErrConfig is the error of [New] for an anonymous client whose http.Client has no Transport.
+	// It classifies as [errs.Invalid].
+	ErrConfig = errs.WithClass(errors.New("github: invalid configuration"), errs.Invalid)
 )

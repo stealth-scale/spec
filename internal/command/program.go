@@ -92,6 +92,19 @@ type Global struct {
 	GraphQL string `help:"The address of the GraphQL API of GitHub." env:"GITHUB_GRAPHQL_URL"`
 }
 
+// access is the access to GitHub that a command needs.
+type access bool
+
+// The accesses to GitHub of the commands.
+const (
+	// readOnly is the access of a command that reads GitHub and writes nothing to it. A public
+	// repository grants it without a token.
+	readOnly access = false
+
+	// readWrite is the access of a command that also writes to GitHub. It needs a token.
+	readWrite access = true
+)
+
 // Program is the program spec: the commands that vendor a definition, sync its copies and verify
 // the reports of its runners.
 //
@@ -100,7 +113,7 @@ type Global struct {
 //   - 0 for a run that succeeds.
 //   - 1 for a check that fails, and for every error without another status.
 //   - 2 for an invalid command line, for an error classified as errs.Invalid, such as a
-//     configuration file that breaks a rule, and for a run without a token of GitHub.
+//     configuration file that breaks a rule, and for a run of propose without a token of GitHub.
 //   - [ExitGitHub] for a request to GitHub that fails.
 //
 // # Concurrency
@@ -144,14 +157,17 @@ func (p *Program) Main(ctx context.Context, env *cli.Env) int {
 	return exitStatus(err)
 }
 
-// client returns the client of the GitHub API that the global options g configure.
+// client returns the client of the GitHub API that the global options g configure for the access
+// a. A client of [readOnly] access without a token is anonymous.
 //
 // Error modes:
-//   - the error of github.New, which wraps forge.ErrToken for options without a token.
-func (p *Program) client(g *Global) (*github.Client, error) {
+//   - the error of github.New, which wraps forge.ErrToken for [readWrite] access without a token.
+//     It wraps github.ErrConfig for [readOnly] access without a token and without a
+//     [Program.Transport].
+func (p *Program) client(g *Global, a access) (*github.Client, error) {
 	c, err := github.New(
 		&http.Client{Transport: p.Transport, Timeout: requestTimeout},
-		github.Config{Token: g.Token, API: g.API, GraphQL: g.GraphQL},
+		github.Config{Token: g.Token, API: g.API, GraphQL: g.GraphQL, Anonymous: a == readOnly},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("command: %w", err)

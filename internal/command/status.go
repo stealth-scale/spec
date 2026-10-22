@@ -38,7 +38,7 @@ func (p *Program) runStatus(ctx context.Context, run *cli.Run[Global, Status]) e
 	if err != nil {
 		return err
 	}
-	gh, err := p.client(run.Global())
+	gh, err := p.client(run.Global(), readOnly)
 	if err != nil {
 		return err
 	}

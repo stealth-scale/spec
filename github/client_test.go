@@ -30,7 +30,46 @@ func TestClient(t *testing.T) {
 		t.Run("returns forge.ErrToken without a token", func(t *testing.T) {
 			t.Parallel()
 			_, err := github.New(&http.Client{Timeout: timeout}, github.Config{})
-			assert.ErrorIs(t, err, forge.ErrToken, "New needs a token")
+			assert.ErrorIs(t, err, forge.ErrToken, "New needs a token or Anonymous")
+		})
+
+		t.Run("returns a client that reads without a token for Anonymous", func(t *testing.T) {
+			t.Parallel()
+			server := serveAuthorization(t, "")
+			c, err := github.New(
+				&http.Client{Timeout: timeout, Transport: server.Client().Transport},
+				github.Config{API: server.URL, Anonymous: true},
+			)
+			assert.NoError(t, err, "New returns a client without a token")
+			branch, err := c.DefaultBranch(t.Context(), repo)
+			assert.NoError(t, err, "DefaultBranch reads without a token")
+			assert.Equal(t, branch, "trunk", "DefaultBranch returns the branch of the repository")
+			sha, found, err := c.Branch(t.Context(), repo, "main")
+			assert.NoError(t, err, "Branch of the forge reads without a token")
+			assert.True(t, found, "the repository has the branch")
+			assert.Equal(t, sha, commit, "Branch returns the commit of the branch")
+		})
+
+		t.Run("returns ErrConfig for Anonymous without a transport", func(t *testing.T) {
+			t.Parallel()
+			_, err := github.New(&http.Client{Timeout: timeout}, github.Config{Anonymous: true})
+			assert.ErrorIs(t, err, github.ErrConfig, "a client without a token needs a transport")
+		})
+
+		t.Run("returns a client that sends its token for Anonymous", func(t *testing.T) {
+			t.Parallel()
+			server := serveAuthorization(t, "Bearer "+token)
+			c, err := github.New(
+				&http.Client{Timeout: timeout, Transport: server.Client().Transport},
+				github.Config{Token: token, API: server.URL, Anonymous: true},
+			)
+			assert.NoError(t, err, "New returns a client with a token")
+			branch, err := c.DefaultBranch(t.Context(), repo)
+			assert.NoError(t, err, "DefaultBranch sends the token")
+			assert.Equal(t, branch, "trunk", "DefaultBranch returns the branch of the repository")
+			_, found, err := c.Branch(t.Context(), repo, "main")
+			assert.NoError(t, err, "Branch of the forge sends the token")
+			assert.True(t, found, "the repository has the branch")
 		})
 	})
 
@@ -654,4 +693,25 @@ func TestClient(t *testing.T) {
 			assert.ErrorIs(t, err, github.ErrGitHub, "LatestRelease returns the error of the tag")
 		})
 	})
+}
+
+// serveAuthorization starts a server of the repository of the cases and its branch main, which the
+// test closes when it ends. The server responds to a request whose header Authorization is
+// authorization, and refuses every other request with status 401.
+func serveAuthorization(t *testing.T, authorization string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Header.Get("Authorization") != authorization:
+			http.Error(w, "the request has another authorization", http.StatusUnauthorized)
+		case r.URL.Path == "/repos/"+repo:
+			_, _ = io.WriteString(w, `{"default_branch": "trunk"}`)
+		case r.URL.Path == "/repos/"+repo+"/git/ref/heads/main":
+			_, _ = io.WriteString(w, `{"object": {"type": "commit", "sha": "`+commit+`"}}`)
+		default:
+			http.Error(w, "the case defines no route of the request", http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
 }

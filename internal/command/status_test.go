@@ -78,15 +78,27 @@ func TestStatus(t *testing.T) {
 			assert.Equal(t, res.Status, cli.ExitUsage, "a configuration that breaks a rule is a usage error")
 		})
 
-		t.Run("returns 2 without a token", func(t *testing.T) {
+		t.Run("reports the copy in each implementation without a token", func(t *testing.T) {
+			t.Parallel()
+			in := &clitest.Input{Args: []string{"-C", workspace(t, first), "status"}, Vars: map[string]string{}}
+			res := start(t, newHub(t), in)
+			assert.Equal(t, res.Status, cli.ExitOK, "the run reads public repositories without a token")
+			assert.Equal(
+				t,
+				res.Stdout,
+				statusHeader+"dokimasia/assert-go  1.0.0    1111111  yes    -     success\n",
+				"the row states the copy, the newer copy and the checks of the default branch",
+			)
+		})
+
+		t.Run("returns 2 for an anonymous run without a transport", func(t *testing.T) {
 			t.Parallel()
 			program := &command.Program{}
-			res := clitest.Main(
-				t.Context(),
-				program.Main,
-				&clitest.Input{Args: []string{"-C", workspace(t, first), "status"}},
-			)
-			assert.Equal(t, res.Status, cli.ExitUsage, "a run of GitHub needs a token")
+			res := clitest.Main(t.Context(), program.Main, &clitest.Input{
+				Args: []string{"-C", workspace(t, first), "status"},
+			})
+			assert.Equal(t, res.Status, cli.ExitUsage, "a run without a token needs a transport")
+			assert.Contains(t, res.Stderr, "invalid configuration", "the failure states the cause")
 		})
 
 		t.Run("returns 1 for an output that cannot be written", func(t *testing.T) {

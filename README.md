@@ -212,11 +212,15 @@ into each checkout.
 |---|---|
 | 0 | The run succeeds |
 | 1 | A check fails, or the run fails with an error without another status |
-| 2 | The command line or a configuration file is invalid, or the run needs GitHub and has no token |
+| 2 | The command line or a configuration file is invalid, or `spec propose` has no token |
 | 3 | A request to GitHub fails |
 
 The flag `-C DIR` runs a command in the repository at DIR. The variables `GITHUB_API_URL` and
 `GITHUB_GRAPHQL_URL` select another host of GitHub, as GitHub Actions sets them.
+
+`spec sync`, `spec check --remote` and `spec status` read public repositories without a token.
+GitHub allows a client without a token 60 requests per hour from one address. Set `GITHUB_TOKEN`
+for a private repository or for more requests. `spec propose` needs a token.
 
 ## Platforms
 

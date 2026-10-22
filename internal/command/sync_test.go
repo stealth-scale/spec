@@ -122,13 +122,22 @@ func TestSync(t *testing.T) {
 			assert.Contains(t, res.Stderr, "the copy has no lock", "the failure states the cause")
 		})
 
-		t.Run("returns 2 without a token", func(t *testing.T) {
+		t.Run("writes the copy of the head of the track without a token", func(t *testing.T) {
+			t.Parallel()
+			dir := workspace(t, implementationAt(t, first, firstCommit))
+			res := start(t, newHub(t), &clitest.Input{Args: []string{"-C", dir, "sync"}, Vars: map[string]string{}})
+			assert.Equal(t, res.Status, cli.ExitOK, "the run reads a public definition without a token")
+			assert.Equal(t, res.Stdout, copyTable("1.1.0", "2222222"), "the run states the copy")
+		})
+
+		t.Run("returns 2 for an anonymous run without a transport", func(t *testing.T) {
 			t.Parallel()
 			program := &command.Program{}
 			res := clitest.Main(t.Context(), program.Main, &clitest.Input{
 				Args: []string{"-C", workspace(t, implementationAt(t, first, firstCommit)), "sync"},
 			})
-			assert.Equal(t, res.Status, cli.ExitUsage, "a run of GitHub needs a token")
+			assert.Equal(t, res.Status, cli.ExitUsage, "a run without a token needs a transport")
+			assert.Contains(t, res.Stderr, "invalid configuration", "the failure states the cause")
 		})
 
 		t.Run("returns 1 for an output that cannot be written", func(t *testing.T) {

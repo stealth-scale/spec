@@ -78,13 +78,10 @@ func TestPropose(t *testing.T) {
 
 		t.Run("returns 2 without a token", func(t *testing.T) {
 			t.Parallel()
-			program := &command.Program{}
-			res := clitest.Main(
-				t.Context(),
-				program.Main,
-				&clitest.Input{Args: []string{"propose", "--repo", implRepo}},
-			)
-			assert.Equal(t, res.Status, cli.ExitUsage, "a run of GitHub needs a token")
+			in := &clitest.Input{Args: []string{"propose", "--repo", implRepo}, Vars: map[string]string{}}
+			res := start(t, newHub(t), in)
+			assert.Equal(t, res.Status, cli.ExitUsage, "a proposal needs a token")
+			assert.Contains(t, res.Stderr, "no token", "the failure states the cause")
 		})
 
 		t.Run("returns 1 for an output that cannot be written", func(t *testing.T) {

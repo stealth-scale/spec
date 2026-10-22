@@ -126,7 +126,7 @@ func (p *Program) source(
 	if opts.From != "" {
 		return local(opts.From, e)
 	}
-	gh, err := p.client(run.Global())
+	gh, err := p.client(run.Global(), readOnly)
 	if err != nil {
 		return nil, err
 	}

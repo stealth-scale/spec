@@ -22,6 +22,7 @@ func TestErrors(t *testing.T) {
 		{name: "ErrGitHub", give: github.ErrGitHub, want: errs.Transient},
 		{name: "ErrArchive", give: github.ErrArchive, want: errs.Integrity},
 		{name: "ErrNoRelease", give: github.ErrNoRelease, want: errs.NotFound},
+		{name: "ErrConfig", give: github.ErrConfig, want: errs.Invalid},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

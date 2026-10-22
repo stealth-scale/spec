@@ -323,11 +323,13 @@ func run(t *testing.T, h *hub, args ...string) clitest.Result {
 	return start(t, h, &clitest.Input{Args: args})
 }
 
-// start runs the program with in, the token of the cases and the API of h, and returns the result.
-// A nil h gives a run without an address of an API.
+// start runs the program with in and the API of h, and returns the result. The run has the token of
+// the cases when the Vars of in are nil. A nil h gives a run without an address of an API.
 func start(t *testing.T, h *hub, in *clitest.Input) clitest.Result {
 	t.Helper()
-	in.Vars = map[string]string{"GITHUB_TOKEN": token}
+	if in.Vars == nil {
+		in.Vars = map[string]string{"GITHUB_TOKEN": token}
+	}
 	program := &command.Program{}
 	if h != nil {
 		server := httptest.NewServer(h)

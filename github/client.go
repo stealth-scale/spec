@@ -59,6 +59,11 @@ const DefaultMaxArchiveBytes = 256 << 20
 // in bytes.
 const maxResponse = 10 << 20
 
+// anonymous is the token that [New] gives the forge of an anonymous client. forge.New refuses an
+// empty token. The transport of the client removes the header Authorization from each request.
+// GitHub never receives the token.
+const anonymous = "anonymous"
+
 // stableTag matches the tag of a stable release: three numbers without leading zeros that dots
 // join, after an optional v.
 var stableTag = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -82,6 +87,25 @@ type Config struct {
 	// MaxArchiveBytes is the largest archive that [Client.Archive] reads, in bytes, or 0 for
 	// [DefaultMaxArchiveBytes].
 	MaxArchiveBytes int64
+
+	// Anonymous lets a client without a token read GitHub without authorization. GitHub serves
+	// such a read of a public repository within a lower rate limit and refuses every write.
+	Anonymous bool
+}
+
+// unauthorized is the transport of an anonymous client. It sends each request through next without
+// the header Authorization. It is safe for concurrent use when next is.
+type unauthorized struct {
+	// next sends the requests, and is not nil.
+	next http.RoundTripper
+}
+
+// RoundTrip sends a copy of req without the header Authorization through next. It returns the
+// response and the error of next.
+func (u unauthorized) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.Header.Del("Authorization")
+	return u.next.RoundTrip(r) //nolint:wrapcheck // http.Client wraps the error of its transport in a url.Error.
 }
 
 // Client is the client of the GitHub API of the program spec. It embeds the client of ergon's
@@ -158,10 +182,24 @@ const (
 
 // New returns a client of the GitHub API that c configures, which sends its requests through h.
 //
+// A c without a token and with Anonymous gives an anonymous client that reads GitHub without
+// authorization. Its forge gets the token [anonymous]. Each request of the client goes through the
+// Transport of h without the header Authorization.
+//
 // Error modes:
-//   - an error that wraps forge.ErrToken for a c without a token.
+//   - an error that wraps forge.ErrToken for a c without a token and without Anonymous.
+//   - an error that wraps [ErrConfig] for an anonymous client and an h without a Transport.
 func New(h *http.Client, c Config) (*Client, error) {
-	f, err := forge.New(h, forge.Config{Token: c.Token, API: c.API, GraphQL: c.GraphQL})
+	token := c.Token
+	if token == "" && c.Anonymous {
+		if h.Transport == nil {
+			return nil, fmt.Errorf("%w: a client without a token needs an http.Client with a Transport", ErrConfig)
+		}
+		plain := *h
+		plain.Transport = unauthorized{next: h.Transport}
+		h, token = &plain, anonymous
+	}
+	f, err := forge.New(h, forge.Config{Token: token, API: c.API, GraphQL: c.GraphQL})
 	if err != nil {
 		return nil, fmt.Errorf("github: %w", err)
 	}

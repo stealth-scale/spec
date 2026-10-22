@@ -54,7 +54,7 @@ func (p *Program) runPropose(ctx context.Context, run *cli.Run[Global, Propose])
 			repos = append(repos, impl.Repo)
 		}
 	}
-	gh, err := p.client(run.Global())
+	gh, err := p.client(run.Global(), readWrite)
 	if err != nil {
 		return err
 	}

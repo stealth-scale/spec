@@ -60,7 +60,7 @@ func (p *Program) runCheck(ctx context.Context, run *cli.Run[Global, Check]) err
 		var gh *github.Client
 		header := copyHeader
 		if run.Config().Remote {
-			if gh, err = p.client(run.Global()); err != nil {
+			if gh, err = p.client(run.Global(), readOnly); err != nil {
 				return err
 			}
 			header = remoteHeader

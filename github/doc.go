@@ -10,6 +10,13 @@
 // commit, a file at a ref, the comparison of two commits, the checks of a commit and the newest
 // stable release, and the close of a pull request.
 //
+// # Authorization
+//
+// A client sends the token of its [Config] with each request. A client without a token and with
+// [Config.Anonymous] is anonymous and sends its requests without authorization. GitHub serves such
+// a request only for a public repository and refuses every write. It allows 60 such requests per
+// hour from one address.
+//
 // # Limits
 //
 // A response of the JSON API and a file may have up to 10 MiB. An archive may have up to
@@ -21,7 +28,9 @@
 //
 // A request that fails returns an error that wraps [ErrGitHub]. An archive that breaks a rule
 // returns an error that wraps [ErrArchive], and a repository without a stable release an error that
-// wraps [ErrNoRelease].
+// wraps [ErrNoRelease]. [New] returns an error that wraps forge.ErrToken for a client that has
+// neither a token nor [Config.Anonymous]. It returns an error that wraps [ErrConfig] for an
+// anonymous client whose http.Client has no Transport.
 //
 // # Dependency position
 //

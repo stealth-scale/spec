@@ -109,13 +109,23 @@ func TestCheck(t *testing.T) {
 			})
 		}
 
-		t.Run("returns 2 without a token with --remote", func(t *testing.T) {
+		t.Run("reports a newer copy without a token with --remote", func(t *testing.T) {
+			t.Parallel()
+			dir := workspace(t, implementationAt(t, first, firstCommit))
+			in := &clitest.Input{Args: []string{"-C", dir, "check", "--remote"}, Vars: map[string]string{}}
+			res := start(t, newHub(t), in)
+			assert.Equal(t, res.Status, cli.ExitOK, "the run reads a public definition without a token")
+			assert.Equal(t, res.Stdout, remoteTable("1.0.0", "1111111", "yes"), "the head has a newer copy")
+		})
+
+		t.Run("returns 2 for an anonymous run without a transport with --remote", func(t *testing.T) {
 			t.Parallel()
 			program := &command.Program{}
 			res := clitest.Main(t.Context(), program.Main, &clitest.Input{
 				Args: []string{"-C", workspace(t, implementationAt(t, first, firstCommit)), "check", "--remote"},
 			})
-			assert.Equal(t, res.Status, cli.ExitUsage, "a run of GitHub needs a token")
+			assert.Equal(t, res.Status, cli.ExitUsage, "a run without a token needs a transport")
+			assert.Contains(t, res.Stderr, "invalid configuration", "the failure states the cause")
 		})
 
 		t.Run("returns 1 for a repository without the configuration file", func(t *testing.T) {
