@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: MIT
 
 # The reusable workflow that opens, updates and closes the sync pull requests of an implementation
-# repository. An implementation calls it on a schedule with secrets: inherit. The token of the GitHub
-# App of the variable ERGON_APP_CLIENT_ID and the secret ERGON_APP_PRIVATE_KEY writes the pull
-# requests, so their checks run without an approval.
+# repository. An implementation calls it on a schedule from a job that grants contents: write and
+# pull-requests: write. spec propose writes the pull requests with the token of that job.
 name: Propose
 
 on:
@@ -22,15 +21,10 @@ jobs:
     name: Propose
     runs-on: ubuntu-26.04
     timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Create the token of the App
-        id: app
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.ERGON_APP_CLIENT_ID }}
-          private-key: ${{ secrets.ERGON_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -42,6 +36,6 @@ jobs:
         run: go install "go.stealthscale.io/spec/cmd/spec@${VERSION}"
       - name: Propose
         env:
-          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: spec propose --repo "${REPO}"

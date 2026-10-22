@@ -162,7 +162,8 @@ track through the GitHub API, without a checkout:
 The body of the pull request states the version and the commit of the copy before and after, the
 commits of the definition between the two, and the files that change.
 
-Each implementation calls the reusable workflow `propose.yml` of this repository on a schedule:
+Each implementation calls the reusable workflow `propose.yml` of this repository on a schedule,
+from a job that grants `contents: write` and `pull-requests: write`:
 
 ```yaml
 name: Spec
@@ -176,16 +177,18 @@ permissions: {}
 
 jobs:
   propose:
+    permissions:
+      contents: write
+      pull-requests: write
     uses: stealth-scale/spec/.github/workflows/propose.yml@<commit> # <version>
     with:
       version: <version>
-    secrets: inherit
 ```
 
-The workflow writes the pull requests with the token of the GitHub App of the variable
-`ERGON_APP_CLIENT_ID` and the secret `ERGON_APP_PRIVATE_KEY`. GitHub starts the checks of a pull
-request that `GITHUB_TOKEN` opens only after a person approves them, and the token of the App has
-no such delay.
+The workflow runs `spec propose` with the token of the calling job. GitHub holds the workflow runs
+of a pull request that this token opens or updates until a person with write access approves
+them. To start the checks at once, run `spec propose` in a job of your own with the token of a
+GitHub App in `GITHUB_TOKEN`.
 
 In the definition repository, `spec propose --all` proposes to every implementation of the section
 `definition`, with your own token in `GITHUB_TOKEN`. `spec status` writes one row per
